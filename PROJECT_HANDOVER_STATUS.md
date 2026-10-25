@@ -24,6 +24,8 @@ Xây dựng công cụ **DiskPulse — Smart Disk Analyzer & Cleaner** tối ưu
   - Đã kiểm thử thực tế toàn bộ API và UI/DOM trên trình duyệt Microsoft Edge (CDP):
     - Quét 3 ổ `C:`, `D:`, `E:` (108.029 thư mục, 1.259.834 file) chỉ mất **~18.5 giây**.
     - Phát hiện ngay **35.27 GB** thuộc nhóm **🟢 An toàn tuyệt đối (Safe)**, **3.39 GB** nhóm **🟡 Cần lưu ý (Caution)**, và **361.85 GB** nhóm **🔴 Xem xét thủ công (Review - File lẻ >= 100 MB)**.
+- [x] **Phase 5 — Tài liệu hóa GitHub (`README.md`):**
+  - Hoàn thiện file `README.md` chuẩn GitHub (huy hiệu, tính năng, bảng phân loại rủi ro Traffic Light, sơ đồ kiến trúc Mermaid, hướng dẫn cài đặt Conda/Python, danh sách REST API và cam kết an toàn dữ liệu).
 
 ## 3. Hướng Dẫn Chạy Tiếp Cho Phiên Sau
 1. Đọc `AGENTS.md` và `PROJECT_HANDOVER_STATUS.md`.

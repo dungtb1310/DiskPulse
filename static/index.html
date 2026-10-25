@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DiskPulse — Phân Tích & Dọn Rác Ổ Đĩa Thông Minh</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Command Bar -->
+    <header class="top-bar">
+      <div class="brand-group">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
+            <path d="M3 12A9 3 0 0 0 21 12"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">DiskPulse Analyzer &amp; Cleaner</h1>
+          <p class="brand-subtitle">Quét đa luồng Cache hệ thống, Thư mục Build/Dependencies dự án &amp; File dung lượng lớn</p>
+        </div>
+      </div>
+
+      <div class="scan-controls">
+        <div class="control-group" title="Chọn chế độ quét">
+          <label>
+            <input type="checkbox" id="chkKnownCaches" checked />
+            Cache &amp; Temp cố định
+          </label>
+          <span style="color: var(--border-strong)">|</span>
+          <label>
+            <input type="checkbox" id="chkDeepScan" checked />
+            Quét sâu ổ đĩa (Projects &amp; Big Files)
+          </label>
+        </div>
+
+        <div class="control-group" title="Ngưỡng báo cáo file lẻ dung lượng lớn">
+          <span>File lớn &ge;</span>
+          <input type="number" id="inpLargeFileMb" class="input-inline tabular" value="100" min="10" max="10000" step="10" />
+          <span>MB</span>
+        </div>
+
+        <div class="control-group" title="Số ngày project không sửa code để gợi ý dọn node_modules / .venv ở mức An toàn">
+          <span>Project cũ &ge;</span>
+          <input type="number" id="inpStaleDays" class="input-inline tabular" value="14" min="1" max="365" />
+          <span>ngày</span>
+        </div>
+
+        <button id="btnStartScan" class="btn btn-primary" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <span>Quét Toàn Bộ Ổ Đĩa</span>
+        </button>
+
+        <button id="btnStopScan" class="btn btn-danger" type="button" style="display: none;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="6" y="6" width="12" height="12"></rect>
+          </svg>
+          <span>Dừng Quét</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Mounted Drives Strip -->
+    <section id="driveStrip" class="drive-strip" aria-label="Danh sách ổ đĩa"></section>
+
+    <!-- Live Scan Progress Banner -->
+    <div id="scanBanner" class="scan-banner hidden" role="status" aria-live="polite">
+      <div class="scan-status-left">
+        <span id="scanPulseDot" class="pulse-dot"></span>
+        <strong id="scanStatusLabel">Đang quét...</strong>
+        <span id="scanCurrentPath" class="scan-current-path mono"></span>
+      </div>
+      <div class="scan-counters tabular">
+        <span>Thư mục đã duyệt: <strong id="statScannedDirs" class="mono">0</strong></span>
+        <span>Tệp đã kiểm tra: <strong id="statScannedFiles" class="mono">0</strong></span>
+        <span>Thời gian: <strong id="statElapsed" class="mono">0.0s</strong></span>
+      </div>
+    </div>
+
+    <!-- Main Analytical Workspace -->
+    <div class="analytics-grid">
+      <!-- Left Column: Reclaimable Summary + Risk Tiers + Treemap + History -->
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Tổng Quan Dung Lượng Có Thể Giải Phóng</h2>
+            <button id="btnSelectAllSafe" class="btn btn-safe" type="button" title="Chọn tất cả các mục An toàn tuyệt đối">
+              Chọn Tất Cả An Toàn
+            </button>
+          </div>
+          <div class="reclaim-overview">
+            <div class="total-reclaim-box">
+              <div>
+                <div style="font-size: 0.78rem; color: var(--text-secondary);">Tổng phát hiện có thể dọn</div>
+                <div id="valTotalReclaim" class="total-reclaim-value tabular">0 B</div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 0.78rem; color: var(--text-secondary);">Số lượng mục</div>
+                <div id="valTotalItems" class="mono" style="font-size: 1.15rem; font-weight: 600;">0</div>
+              </div>
+            </div>
+
+            <div class="risk-tiers" role="group" aria-label="Lọc nhanh theo mức độ an toàn">
+              <div class="risk-tier-row" data-risk-filter="safe" id="tierRowSafe">
+                <div class="tier-left">
+                  <span class="badge badge-safe">An toàn tuyệt đối</span>
+                  <span style="font-size: 0.78rem; color: var(--text-secondary);">Xóa ngay không mất dữ liệu</span>
+                </div>
+                <strong id="valSafeBytes" class="mono">0 B</strong>
+              </div>
+
+              <div class="risk-tier-row" data-risk-filter="caution" id="tierRowCaution">
+                <div class="tier-left">
+                  <span class="badge badge-caution">Cần lưu ý</span>
+                  <span style="font-size: 0.78rem; color: var(--text-secondary);">Project đang code / Bộ cài</span>
+                </div>
+                <strong id="valCautionBytes" class="mono">0 B</strong>
+              </div>
+
+              <div class="risk-tier-row" data-risk-filter="review" id="tierRowReview">
+                <div class="tier-left">
+                  <span class="badge badge-review">Xem xét thủ công</span>
+                  <span style="font-size: 0.78rem; color: var(--text-secondary);">File lẻ dung lượng lớn</span>
+                </div>
+                <strong id="valReviewBytes" class="mono">0 B</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Treemap Chart -->
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Bản Đồ Phân Bổ Dung Lượng (Treemap)</h2>
+            <span style="font-size: 0.75rem; color: var(--text-secondary);">Bấm vào ô để lọc danh mục</span>
+          </div>
+          <div id="treemapChart" class="treemap-container"></div>
+        </section>
+
+        <!-- Cleanup History -->
+        <section class="panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Lịch Sử Đã Dọn Dẹp</h2>
+            <span id="historyCountBadge" class="mono" style="font-size: 0.75rem; color: var(--text-secondary);">0 phiên</span>
+          </div>
+          <div id="historyList" class="history-list">
+            <div style="color: var(--text-secondary); font-size: 0.8125rem; padding: 8px 0;">
+              Chưa có lịch sử dọn dẹp nào trong phiên này.
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Right Column: Detailed Filterable Table -->
+      <section class="panel">
+        <div class="table-toolbar">
+          <div class="filter-group">
+            <input
+              type="search"
+              id="inpSearch"
+              class="search-input"
+              placeholder="Tìm theo tên thư mục, project, đường dẫn..."
+            />
+
+            <select id="selDriveFilter" class="select-control" aria-label="Lọc theo ổ đĩa">
+              <option value="ALL">Tất cả ổ đĩa</option>
+            </select>
+
+            <select id="selRiskFilter" class="select-control" aria-label="Lọc theo mức độ an toàn">
+              <option value="ALL">Mọi mức độ an toàn</option>
+              <option value="safe">Chỉ An toàn tuyệt đối (Safe)</option>
+              <option value="caution">Cần lưu ý (Caution)</option>
+              <option value="review">Xem xét thủ công (Review)</option>
+            </select>
+
+            <select id="selCategoryFilter" class="select-control" aria-label="Lọc theo danh mục">
+              <option value="ALL">Tất cả danh mục</option>
+              <option value="system_temp">Rác &amp; Bộ Nhớ Tạm Hệ Thống</option>
+              <option value="browser_app_cache">Cache Trình Duyệt &amp; Ứng Dụng</option>
+              <option value="dev_global_cache">Cache Công Cụ Lập Trình (Global)</option>
+              <option value="dev_project_artifact">Thư Mục Build &amp; Dependencies Dự Án</option>
+              <option value="downloads_installer">Bộ Cài &amp; File Nén (Downloads)</option>
+              <option value="log_dump">File Log, Crash Dump &amp; Rác Rải Rác</option>
+              <option value="large_file">File Lẻ Dung Lượng Lớn</option>
+            </select>
+
+            <select id="selSortBy" class="select-control" aria-label="Sắp xếp theo">
+              <option value="size_desc">Dung lượng: Lớn &rarr; Nhỏ</option>
+              <option value="size_asc">Dung lượng: Nhỏ &rarr; Lớn</option>
+              <option value="age_desc">Độ tuổi: Cũ nhất trước</option>
+              <option value="age_asc">Độ tuổi: Mới nhất trước</option>
+            </select>
+          </div>
+
+          <div style="font-size: 0.8125rem; color: var(--text-secondary);" class="tabular">
+            Hiển thị <strong id="lblFilteredCount" style="color: var(--text-primary);">0</strong> mục
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 38px; text-align: center;">
+                  <input type="checkbox" id="chkSelectAllVisible" title="Chọn / Bỏ chọn tất cả các mục đang hiển thị" />
+                </th>
+                <th>Mục Phát Hiện &amp; Đường Dẫn</th>
+                <th>Mức Độ &amp; Danh Mục</th>
+                <th>Giải Thích Lý Do &amp; Hệ Quả Khi Xóa</th>
+                <th style="text-align: right;">Dung Lượng</th>
+                <th style="text-align: right;">Sửa Đổi Cuối</th>
+                <th style="text-align: center;">Kiểm Tra</th>
+              </tr>
+            </thead>
+            <tbody id="itemsTableBody">
+              <tr>
+                <td colspan="7">
+                  <div class="empty-state">
+                    <p>Đang khởi tạo dữ liệu quét ổ đĩa...</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Sticky Bottom Action Bar -->
+  <footer class="action-dock" aria-label="Thanh tác vụ dọn dẹp">
+    <div class="action-dock-inner">
+      <div class="selection-summary">
+        <span>Đã chọn: <strong id="lblSelectedCount" class="mono">0</strong> mục</span>
+        <span id="lblSelectedBytes" class="selected-size-badge mono">0 B</span>
+        <button id="btnClearSelection" class="btn btn-ghost" type="button">Bỏ chọn tất cả</button>
+      </div>
+
+      <div class="clean-actions">
+        <div class="control-group" style="background: var(--bg-surface);">
+          <span>Chế độ xóa:</span>
+          <label title="Chuyển vào Recycle Bin để có thể khôi phục nếu cần">
+            <input type="radio" name="cleanMode" value="recycle" checked />
+            Đưa vào Thùng Rác (An toàn, khôi phục được)
+          </label>
+          <span style="color: var(--border-strong)">|</span>
+          <label title="Xóa vĩnh viễn siêu tốc, phù hợp cho node_modules hoặc khi ổ đã đầy 100%">
+            <input type="radio" name="cleanMode" value="permanent" />
+            Xóa Vĩnh Viễn Siêu Tốc
+          </label>
+        </div>
+
+        <button id="btnExecuteClean" class="btn btn-primary" type="button" disabled>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          <span id="btnExecuteCleanText">Dọn Dẹp Các Mục Đã Chọn</span>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast Container -->
+  <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
